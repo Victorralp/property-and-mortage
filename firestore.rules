@@ -1,0 +1,71 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper function to check if user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    // Helper function to check user role
+    function hasRole(role) {
+      return isAuthenticated() && 
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == role;
+    }
+    
+    // Helper function to check if user owns the document
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+    
+    // Users collection
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && request.auth.uid == userId;
+      allow update: if isOwner(userId) || hasRole('admin');
+      allow delete: if hasRole('admin');
+    }
+    
+    // Properties collection
+    match /properties/{propertyId} {
+      allow read: if true; // Public read access
+      allow create: if isAuthenticated() && (hasRole('agent') || hasRole('admin'));
+      allow update: if isAuthenticated() && (hasRole('agent') || hasRole('admin'));
+      allow delete: if hasRole('admin');
+    }
+    
+    // Mortgages collection
+    match /mortgages/{mortgageId} {
+      allow read: if true; // Public read access
+      allow write: if hasRole('admin');
+    }
+    
+    // Mortgage applications
+    match /mortgageApplications/{applicationId} {
+      allow read: if isAuthenticated() && 
+                     (resource.data.userId == request.auth.uid || 
+                      hasRole('agent') || 
+                      hasRole('admin'));
+      allow create: if isAuthenticated() && request.data.userId == request.auth.uid;
+      allow update: if isAuthenticated() && 
+                       (resource.data.userId == request.auth.uid || 
+                        hasRole('agent') || 
+                        hasRole('admin'));
+      allow delete: if hasRole('admin');
+    }
+    
+    // Analytics collection (admin only)
+    match /analytics/{doc=**} {
+      allow read: if hasRole('investor') || hasRole('admin');
+      allow write: if hasRole('admin');
+    }
+    
+    // Reviews collection
+    match /reviews/{reviewId} {
+      allow read: if true;
+      allow create: if isAuthenticated();
+      allow update: if isOwner(resource.data.userId) || hasRole('admin');
+      allow delete: if isOwner(resource.data.userId) || hasRole('admin');
+    }
+  }
+}
